@@ -1,0 +1,373 @@
+---
+title: "Multivariate Analysis Assignment"
+author: "Suraj Bodhanandan Nhattuvetty - 23200338"
+format: pdf
+editor: visual
+---
+
+## Question 1
+
+```{r}
+#Load the dataset
+set.seed(23200338)
+data_temp <- read.csv("Temperature_data.csv")
+
+#Load dplyr package
+library(dplyr)
+#Sample 1000 observations
+data <- sample_n(data_temp, size = 1000)
+```
+
+## Question 2
+
+We check if there are missing or NA values in the Oral_Temp variable
+
+```{r}
+#Check for missing values
+sum(is.na(data$aveOralM))
+```
+
+There are no missing values so no rows are removed.
+
+```{r}
+#Plot the facial and oral temperatures
+par(mfrow = c(1,3))
+plot(data$Max1R13_1, data$aveOralM, xlab = "Max1R13_1", ylab = "aveOralM")
+plot(data$T_RC1, data$aveOralM, xlab = "T_RC1", ylab = "aveOralM")
+plot(data$T_LC1, data$aveOralM, xlab = "T_LC1", ylab = "aveOralM")
+
+```
+
+```{r}
+par(mfrow = c(1,3))
+plot(data$RCC1, data$aveOralM, xlab = "RCC1", ylab = "aveOralM")
+plot(data$canthiMax1, data$aveOralM, xlab = "canthiMax1", ylab = "aveOralM")
+plot(data$T_FHCC1, data$aveOralM, xlab = "T_FHCC1", ylab = "aveOralM")
+```
+
+```{r}
+par(mfrow = c(1,2))
+plot(data$T_FHLC1, data$aveOralM, xlab = "T_FHLC1", ylab = "aveOralM")
+plot(data$T_FHTC1, data$aveOralM, xlab = "T_FHTC1", ylab = "aveOralM")
+```
+
+It can be seen from all the plots that the relation between the variables are positive. The average oral temperature is around 36 to 37 and the average facial temperature seems to be around 34 to 35 as most number of points are plotted in this region. It can also be seen that there are some outliers in the dataset.
+
+```{r}
+#Removing outlier
+threshold <- mean(data$aveOralM) - 4 * sd(data$aveOralM)
+data <- filter(data, aveOralM >= threshold)
+nrow(data)
+```
+
+One outlier has been removed now.
+
+## Question 3
+
+### Hierarchical clustering
+
+We extract the required variables and plot a histogram of one variable to check if it is normally distributed. We only check for one variable as the variables are very similar to each other.
+
+```{r}
+#Extract facial temperatures
+data_facial <- data[,1:8]
+#Plot histogram of one variable
+hist(data_facial$Max1R13_1, xlab = "Max1R13_1", main = "Histogram of Max1R13_1" )
+```
+
+From the histogram it can be seen that the data is normally distributed. Therefore we decide to use average linkage method for hierarchical clustering and Euclidean distance is used for dissimilarity matrix as the data is numerical.
+
+```{r}
+dist_eucl <- dist(data_facial, method = "euclidean")
+hcluster <- hclust(dist_eucl, method = "average")
+plot(hcluster, xlab="Average linkage", sub="")
+```
+
+From the dendrogram it can be seen that there may be two clusters in the data but they are very close as the height is not very different for the two topmost clusters.
+
+### K-means
+
+For K-means, we need to decide on a K value. We find the within group sum of squares for K over the range 1 to 10 and plot it against the K values to find the optimal value.
+
+```{r}
+#Calculate sum of squares for elbow plot
+WGSS = rep(0,10)
+n = nrow(data_facial)
+
+for(k in 1:10)
+{
+  WGSS[k] = sum(kmeans(faithful, centers = k)$withinss)
+}
+
+plot(1:10, WGSS, type="b", xlab="k", ylab="Within group sum of squares",
+     main = "Elbow plot")
+```
+
+From the elbow plot it can be clearly seen that K should be 2.
+
+```{r}
+library(tidyr)
+#Dropping the missing values
+data_facial <- drop_na(data_facial)
+```
+
+```{r}
+#Performing k means clustering
+k = 2
+kcluster = kmeans(data_facial, center=k, nstart=10)
+table(kcluster$cluster)
+```
+
+```{r}
+#Plotting the clusters
+plot(data_facial, col = kcluster$cluster)
+points(kcluster$centers, col=1:k, pch=8, cex=2)
+```
+
+The clusters formed are meaningful. There is one cluster which consists of higher temperatures recorded and another cluster of lower temperatures. There is not a big distance between the clusters which was seen in the dendrogram of the hierarchical clustering. The initial assumption of two clusters in hierarchical clustering also turned out to be correct.
+
+## Question 4
+
+### LDA
+
+We extract the necessary data and perform PCA on it as we need to plot the decision boundaries of the LDA.
+
+```{r}
+library(MASS)
+#Extract the data
+data_facial_2 <- cbind(data[,1:8], Gender = data$Gender)
+data_facial_2 <- drop_na(data_facial_2)
+#Standardise the data
+data_facial_lda <- scale(data_facial_2[,1:8])
+#Perform PCA
+pca_lda <- prcomp(data_facial_lda)
+summary(pca_lda)
+```
+
+We select 2 principal components as total variance explained is close to 92%.
+
+```{r}
+#Calculate PCA scores and selecting only first 2 prinicipal components
+new_data <- predict(pca_lda)
+data_facial_3 <- cbind(as.data.frame(new_data[,1:2]), 
+                       Gender = data_facial_2$Gender)
+```
+
+Splitting the data into train and test for the LDA. We decide to do 70-30 split as we have close to 1000 observations.
+
+```{r}
+#Splitting the data into train and test
+sample <- sample(c(TRUE, FALSE), nrow(data_facial_3), 
+                 replace=TRUE, prob=c(0.7,0.3))
+train <- data_facial_3[sample, ]
+test <- data_facial_3[!sample, ]
+```
+
+```{r}
+#Fitting the LDA model
+lda1 <- lda(Gender ~ ., data = train)
+lda1
+```
+
+```{r}
+#Testing LDA
+predict_lda <- predict(lda1, test)$class
+
+#Confusion matrix and accuracy
+tab1 <- table(Predicted = predict_lda, Actual = test$Gender)
+print(tab1)
+print(sum(diag(tab1))/sum(tab1))
+```
+
+The accuracy for LDA is around 63% which is not that great. This may be because of performing PCA before LDA.
+
+We plot the decision boundary for the LDA
+
+```{r}
+#Plot decision boundary
+boundary <- function(model, data, class = NULL, predict_type = "class",
+  resolution = 100, showgrid = TRUE, ...) {
+
+  if(!is.null(class)) cl <- data[,class] else cl <- 1
+  data <- data[,1:2]
+  k <- length(unique(cl))
+
+  plot(data, col = as.integer(cl)+1L, pch = as.integer(cl)+1L, ...)
+
+  r <- sapply(data, range, na.rm = TRUE)
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each=resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as.data.frame(g)
+
+  p <- predict(model, g, type = predict_type)
+  if(is.list(p)) p <- p$class
+  p <- as.factor(p)
+
+  if(showgrid) points(g, col = as.integer(p)+1L, pch = ".")
+
+  z <- matrix(as.integer(p), nrow = resolution, byrow = TRUE)
+  contour(xs, ys, z, add = TRUE, drawlabels = FALSE,
+    lwd = 2, levels = (1:(k-1))+.5)
+
+  invisible(z)
+}
+
+boundary(lda1, train, class = "Gender", main = "LDA Decision Boundary")
+```
+
+### QDA
+
+Now we perform QDA and check how it compares to LDA.
+
+```{r}
+#Splitting the data into train and test
+sample <- sample(c(TRUE, FALSE), nrow(data_facial_2), 
+                 replace=TRUE, prob=c(0.7,0.3))
+train_q <- data_facial_2[sample, ]
+test_q <- data_facial_2[!sample, ]
+```
+
+```{r}
+#Fitting QDA
+qda1 <- qda(Gender ~ ., data = train_q)
+qda1
+```
+
+```{r}
+#Testing QDA
+predict_qda <- predict(qda1, test_q)$class
+
+#Confusion matrix and accuracy
+tab2 <- table(Predicted = predict_qda, Actual = test_q$Gender)
+print(tab2)
+print(sum(diag(tab2))/sum(tab2))
+```
+
+The accuracy for QDA is around 85% which is much higher than that of LDA meaning QDA performs better than LDA. A QDA is usually better for large datasets like in this case and LDA is suitable for smaller datasets.
+
+## Question 5
+
+We perform PCA on the facial temperature data. Before that we standardise the dataset as PCA is sensitive to the scale of the data.
+
+```{r}
+#Standardise the data
+data_facial <- scale(data_facial)
+#Perform PCA
+pca_fit <- prcomp(data_facial)
+```
+
+```{r}
+summary(pca_fit)
+```
+
+It can be seen that just 2 components explain about 92% of the variance and therefore we only select 2 components.
+
+```{r}
+round(pca_fit$rotation, 2)
+```
+
+Looking at the loadings, first component seems to be looking at the overall temperature of the face as every loading is positive. The second component seems to be looking at the temperature of the face excluding the forehead area the loadings for the forehead temperatures (T_FHCC1, T_FHLC1, T_FHTC1) are all negative.
+
+```{r}
+plot(pca_fit, main = "PCA variance proportion")
+```
+
+From the plot too it can be understood that only 2 components will be needed.
+
+## Question 6
+
+We calculate the PCA scores for each subject using the data without using the predict function.
+
+```{r}
+#Calculate the pca score from the data
+#Construct covariance matrix
+cov_data_facial <- cov(data_facial)
+#Find eigenvalues and eigenvectors
+e_list <- eigen(cov_data_facial)
+e_list$vectors
+#Calculate the pca score
+pca_score <- data_facial %*% e_list$vectors
+```
+
+```{r}
+#Plotting the pca scores
+test_factor <- as.factor(data_facial_2$Gender)
+plot(pca_score[,1], pca_score[,2], type="n", xlab="PC1", ylab="PC2",
+     main = "PCA scores")
+text(pca_score[,1], pca_score[,2], labels = substr(data_facial_2[,9],1,1),
+     col = as.integer(test_factor))
+```
+
+From the score plot, most points are in the centre which is probably the average temperature of the subjects. A few outliers can be seen on the left and right sides of the plot. There is no big distinction of clusters but maybe there are 2 clusters which can been seen by the points on the left and right side of the plot. This could be an indication for clusters for higher and lower facial temperatures.
+
+## Question 7
+
+Principal Components Regression (PCR) is a regression technique which is like a combination of Principal Component Analysis (PCA) and Multiple Linear Regression. It is mainly used for data that has a large number of variables and suffers from multicollinearity which results in larger standard errors and affects the accuracy of the regression coefficients.
+
+### Working
+
+PCA is first performed on the data to reduce the dimensionality of the data. We will then have to select an appropriate number of principal components. This can be based on the total variance explained by the principal components.
+
+Once the principal components are selected, they are used as predictors in a multiple linear regression model. This will estimate the coefficients and the model now can then be used for predictions on other data.
+
+Since PCA is being done in PCR, the main decision to be made is the number of principal components to be used for prediction.
+
+### Advantages
+
+-   PCR reduces the dimensionality of the dataset making it suitable for wide data (variables \> observations).
+
+-   PCR also helps in reducing collinearity which would have been a problem for linear regression.
+
+### Disadvantages
+
+-   PCR works well only with linear data. In case of non-linear relationships, PCR will not perform as well.
+
+-   Another drawback seen in PCR is that it does not take into account of the response variable while selecting the principal components. The selection is done by looking at the variance explained by principal components.
+
+## Question 8
+
+We split the data into train and test for PCR. We decide to do 70-30 split as we have close to 1000 observations and this split should be enough for both training and testing.
+
+```{r}
+library(pls)
+#Splitting the data into train and test
+data_facial_pcr <- cbind(data[,1:8], AveOralM = data[,11])
+sample <- sample(c(TRUE, FALSE), nrow(data_facial_pcr), 
+                 replace=TRUE, prob=c(0.7,0.3))
+train_pcr <- data_facial_pcr[sample, ]
+test_pcr <- data_facial_pcr[!sample, ]
+y_test <- test_pcr[,9]
+```
+
+We fit the PCR model.
+
+```{r}
+#Fitting the model
+pcr_model <- pcr(AveOralM ~ ., data = train_pcr)
+summary(pcr_model)
+```
+
+From the summary it can be seen that the first two components explain around 91% of the variance. Therefore we decide to use only 2 components for prediction on the new data.
+
+```{r}
+pcr_pred <- predict(pcr_model, test_pcr[,1:8], ncomp=2)
+head(pcr_pred)
+```
+
+```{r}
+sqrt(mean((pcr_pred - y_test)^2, na.rm = TRUE))
+```
+
+We get an RMSE close to 0.37. This means that the PCR model is relatively for good for accurately predicting on new data.
+
+```{r}
+plot(x = pcr_pred, y = y_test,
+     xlab = "Predicted Values",
+     ylab = "Actual Values",
+     main = "Predicted vs Actual Values")
+abline(a=0, b=1)
+```
+
+When we plot the predicted values and actual values, it can be seen that the points are pretty regression line so the model is a pretty good fit for this data.
